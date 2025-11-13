@@ -1,4 +1,37 @@
 # ingress-modernizr
+
+`ingress-modernizr` is a Helm post-renderer that consumes Kubernetes manifests from `stdin`, rewrites any `Ingress` or `IngressClass` resources into their Gateway API equivalents (a `Gateway`, `HTTPRoute`, and `GatewayClass`), and prints the updated manifest stream to `stdout`. Everything else is passed through untouched, making it simple to modernize legacy charts without editing the chart sources.
+
+## Getting Started
+
+```bash
+# Build the renderer
+go build -o ingress-modernizr ./...
+
+# Run it as a Helm post-renderer
+helm template my-release ./chart \
+  --post-renderer ./ingress-modernizr \
+  --post-renderer-args="--default-gateway-class=internal --gateway-suffix=-gw"
+```
+
+The renderer accepts the following flags:
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| `--default-gateway-class` | GatewayClass name to use when an Ingress did not specify one. | `standard` |
+| `--gateway-suffix` | Suffix appended to generated Gateway names. | `-gateway` |
+
+## How It Works
+
+1. Every manifest document is parsed from `stdin`.
+2. `IngressClass` objects become `GatewayClass` objects that carry over metadata and controller settings.
+3. Each `Ingress`:
+   - Turns into a namespaced `Gateway` (one per Ingress) with listeners derived from host and TLS settings.
+   - Produces a matching `HTTPRoute` that preserves rules, hostnames, and default backends.
+   - Copies metadata and adds `ingress-modernizr` markers so they can be traced back to the source Ingress.
+4. Non-Ingress resources are emitted unchanged.
+
+The tool exits with an error if an Ingress cannot be converted (for example, when a backend uses a named Service port that cannot be mapped to a numeric port). This fail-fast behavior prevents Helm from applying partially converted resources.
 ****
 > Helm post renderer tool that replaces all Ingress-related resources with Kubernetes Gateway API equivalents.
 
