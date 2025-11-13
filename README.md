@@ -1,84 +1,140 @@
 # ingress-modernizr
 
-`ingress-modernizr` is a Helm post-renderer that consumes Kubernetes manifests from `stdin`, rewrites any `Ingress` or `IngressClass` resources into their Gateway API equivalents (a `Gateway`, `HTTPRoute`, and `GatewayClass`), and prints the updated manifest stream to `stdout`. Everything else is passed through untouched, making it simple to modernize legacy charts without editing the chart sources.
+A Helm post-renderer that automatically converts Kubernetes Ingress resources into Gateway API resources using [ingress2gateway](https://github.com/kubernetes-sigs/ingress2gateway).
 
-## Getting Started
+`ingress-modernizr` injects itself between Helm's template output and the final apply step.
+It runs `ingress2gateway` under the hood, replaces all Ingress resources, and returns a transformed manifest set containing the Gateway API equivalents (e.g., Gateway, HTTPRoute, service attachments, etc.).
+
+This makes it possible to progressively modernize charts and clusters without modifying the charts themselves.
+
+## ⚠️ Extremely Experimental
+
+- This tool is VERY EXPERIMENTAL and an experiment in itself.
+- Do NOT use in production.
+- No warranties, guarantees, or expectations of correctness.
+- APIs may break at any time.
+- The output may destroy clusters, summon demons, or both.
+- PRs, discussions, and contributions are welcome.
+
+## Why?
+
+NGINX Ingress is being retired. Gateway API is the strategic direction across major Kubernetes vendors.
+Migrating existing Helm charts can be painful, especially when:
+- Dozens of charts still ship Ingress resources.
+- You need Gateway API today.
+- You want to modernize without forking upstream charts.
+- ingress-modernizr serves as a drop-in modernization layer.
+
+## What It Does
+
+1. Helm renders all templates.
+1. Helm pipes the rendered YAML into ingress-modernizr.
+1. `ingress-modernizr`:
+    - Reads the entire manifest set.
+    - Removes all Ingress resources.
+    - Invokes ingress2gateway print with all user-supplied flags.
+    - Receives Gateway API resources from ingress2gateway.
+    - Appends them to the manifest set.
+1. The transformed output is sent back to Helm.
+1. Helm applies the Gateway API resources instead of Ingress.
+
+Everything else (Deployments, Services, CRDs, RBAC, etc.) remains untouched.
+
+## Installation 
+
+### Build from source:
 
 ```bash
-# Build the renderer
-go build -o ingress-modernizr ./...
+git clone https://github.com/deadmilkman/ingress-modernizr
+cd ingress-modernizr
+make build    # or `go build ./cmd/ingress-modernizr`
 
-# Run it as a Helm post-renderer
-helm template my-release ./chart \
+```
+
+### Or install using Go:
+
+```bash
+go install github.com/deadmilkman/ingress-modernizr@latest
+```
+
+Make sure `ingress2gateway` is also available in your `$PATH`:
+
+```bash
+go install sigs.k8s.io/ingress2gateway@latest
+```
+
+You can override the binary path via:
+
+```bash
+export INGRESS2GATEWAY_BIN=/custom/path/ingress2gateway
+```
+
+## Usage With Helm
+
+Basic example
+
+```bash
+helm upgrade --install myapp ./chart \
   --post-renderer ./ingress-modernizr \
-  --post-renderer-args="--default-gateway-class=internal --gateway-suffix=-gw"
+  --post-renderer-args="--providers=ingress-nginx"
 ```
 
-The renderer accepts the following flags:
+Example with namespace + other flags
 
-| Flag | Description | Default |
-| --- | --- | --- |
-| `--default-gateway-class` | GatewayClass name to use when an Ingress did not specify one. | `standard` |
-| `--gateway-suffix` | Suffix appended to generated Gateway names. | `-gateway` |
-
-## How It Works
-
-1. Every manifest document is parsed from `stdin`.
-2. `IngressClass` objects become `GatewayClass` objects that carry over metadata and controller settings.
-3. Each `Ingress`:
-   - Turns into a namespaced `Gateway` (one per Ingress) with listeners derived from host and TLS settings.
-   - Produces a matching `HTTPRoute` that preserves rules, hostnames, and default backends.
-   - Copies metadata and adds `ingress-modernizr` markers so they can be traced back to the source Ingress.
-4. Non-Ingress resources are emitted unchanged.
-
-The tool exits with an error if an Ingress cannot be converted (for example, when a backend uses a named Service port that cannot be mapped to a numeric port). This fail-fast behavior prevents Helm from applying partially converted resources.
-****
-> Helm post renderer tool that replaces all Ingress-related resources with Kubernetes Gateway API equivalents.
-
-⚠️ **VERY EXPERIMENTAL. DO NOT USE IN PRODUCTION.** ⚠️
-
----
-
-## What is this?
-
-`ingress-modernizr` is an experimental Helm post-renderer that attempts to automatically convert Kubernetes Ingress resources into [Gateway API](https://gateway-api.sigs.k8s.io/) resources. This is an early-stage experiment aiming to explore the feasibility of automated migration.
-
-## Status
-
-* 🚧 Alpha quality
-* 🧪 Designed for experimentation and discussion
-* ❌ Not safe or suitable for production use
-* 🔒 No guarantees of correctness, stability, or support
-
-## Goals
-
-* Help explore automated migration paths from Ingress to Gateway API
-* Simplify experimentation with Helm charts that still use Ingress
-* Encourage discussion and collaboration around next-gen Kubernetes networking
-
-## Usage
-
-Run Helm with the post-renderer:
+Everything after `--post-renderer-args` is passed directly to `ingress2gateway`:
 
 ```bash
-helm install my-app ./my-chart \
-  --post-renderer ./ingress-modernizr
+helm upgrade --install myapp ./chart \
+  --post-renderer ./ingress-modernizr \
+  --post-renderer-args="--namespace=apps --providers=ingress-nginx --kubeconfig=/my/kubeconfig"
 ```
 
-**Note:** This assumes you have built or downloaded the `ingress-modernizr` binary and made it executable.
+
+### Provider is mandatory
+
+`ingress2gateway` requires you to specify a provider:
+
+- --providers=ingress-nginx
+- --providers=gce
+- --providers=traefik
+- etc.
+
+If you forget it, the tool will error out.
+
+## Debugging
+
+Inspect what Helm is giving the post-renderer
+
+```bash
+helm template myapp ./chart > before.yaml
+```
+
+Run ingress-modernizr manually
+
+```bash
+cat before.yaml \
+  | ingress-modernizr --providers=ingress-nginx \
+  > after.yaml
+```
+
+Now inspect after.yaml:
+
+- No Ingress resources remain.
+- Gateway, HTTPRoute, and related objects appear.
+
+Example End-to-End
+
+```bash
+helm template demo ./demo-chart \
+  | ingress-modernizr --providers=ingress-nginx \
+  | kubectl apply -f -
+```
 
 ## Contributing
 
-PRs and discussions are welcome. If you have ideas, improvements, or just want to explore this migration path together, jump in.
-
-We welcome contributions under the spirit of experimentation and learning.
+Contributions, issues, discussions, and PRs are welcome.
+Gateway API is evolving rapidly — real-world feedback is highly valuable.
 
 ## License
 
-[MIT](LICENSE)
-
----
-
-**Again, do NOT use this in production.** This is an experiment. It might break things. It might delete things. There are no safeguards. You have been warned.
-
----
+[MIT](https://mit-license.org/)
