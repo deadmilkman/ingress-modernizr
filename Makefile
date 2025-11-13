@@ -1,2 +1,2 @@
 build:
-	go build ./cmd/main.go
+	go build -o ./dist/ingress-modernizr ./cmd/main.go 

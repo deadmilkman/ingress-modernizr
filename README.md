@@ -133,7 +133,6 @@ helm template demo ./demo-chart \
 ## Contributing
 
 Contributions, issues, discussions, and PRs are welcome.
-Gateway API is evolving rapidly — real-world feedback is highly valuable.
 
 ## License
 
