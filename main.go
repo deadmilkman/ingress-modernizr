@@ -173,7 +173,7 @@ Provider is mandatory (e.g., --providers=ingress-nginx).
 	}
 
 	if *version {
-		fmt.Println("ingress-modernizr v1.0.0")
+		fmt.Println("ingress-modernizr v0.0.1")
 		return
 	}
 
