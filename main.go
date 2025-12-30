@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
@@ -16,25 +17,33 @@ import (
 
 // readAllObjects reads a multi-doc YAML/JSON stream into a slice of Unstructured.
 func readAllObjects(r io.Reader) ([]*unstructured.Unstructured, error) {
-	decoder := utilyaml.NewYAMLOrJSONDecoder(r, 4096)
-
+	scanner := utilyaml.NewYAMLReader(bufio.NewReader(r))
 	var objs []*unstructured.Unstructured
 	for {
-		raw := make(map[string]interface{})
-		if err := decoder.Decode(&raw); err != nil {
+		doc, err := scanner.Read()
+		if err != nil {
 			if err == io.EOF {
 				break
 			}
-			return nil, fmt.Errorf("failed to decode manifest: %w", err)
+			return nil, fmt.Errorf("failed to read document: %w", err)
 		}
 
-		// Skip empty docs (e.g. trailing ---)
+		trimmed := bytes.TrimSpace(doc)
+		if len(trimmed) == 0 {
+			continue
+		}
+
+		var raw map[string]interface{}
+		if err := syaml.Unmarshal(doc, &raw); err != nil {
+			// If it's not a map (e.g. a scalar or comment doc), skip it for object parsing
+			continue
+		}
+
 		if len(raw) == 0 {
 			continue
 		}
 
-		u := &unstructured.Unstructured{Object: raw}
-		objs = append(objs, u)
+		objs = append(objs, &unstructured.Unstructured{Object: raw})
 	}
 
 	return objs, nil
@@ -62,12 +71,11 @@ func writeObjectsYAML(objs []*unstructured.Unstructured, w io.Writer) error {
 	return nil
 }
 
-// runIngress2Gateway takes the full original manifest set, writes it to a temp file,
+// runIngress2Gateway takes only the Ingress resources, writes them to a temp file,
 // and calls `ingress2gateway print --input-file=<temp>`, passing through any extraArgs.
 // It returns the converted Gateway API resources as Unstructured objects.
-func runIngress2Gateway(allOriginal []*unstructured.Unstructured, extraArgs []string) ([]*unstructured.Unstructured, error) {
-	// If there's nothing, nothing to convert.
-	if len(allOriginal) == 0 {
+func runIngress2Gateway(ingresses []*unstructured.Unstructured, extraArgs []string) ([]*unstructured.Unstructured, error) {
+	if len(ingresses) == 0 {
 		return nil, nil
 	}
 
@@ -80,7 +88,7 @@ func runIngress2Gateway(allOriginal []*unstructured.Unstructured, extraArgs []st
 		_ = os.Remove(tmpPath)
 	}()
 
-	if err := writeObjectsYAML(allOriginal, tmpFile); err != nil {
+	if err := writeObjectsYAML(ingresses, tmpFile); err != nil {
 		_ = tmpFile.Close()
 		return nil, fmt.Errorf("failed to write manifests to temp file: %w", err)
 	}
@@ -88,13 +96,11 @@ func runIngress2Gateway(allOriginal []*unstructured.Unstructured, extraArgs []st
 		return nil, fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	// Decide which ingress2gateway binary to use.
 	bin := os.Getenv("INGRESS2GATEWAY_BIN")
 	if bin == "" {
 		bin = "ingress2gateway"
 	}
 
-	// If the user passed "print" explicitly, drop it — we always call print.
 	if len(extraArgs) > 0 && extraArgs[0] == "print" {
 		extraArgs = extraArgs[1:]
 	}
@@ -102,7 +108,6 @@ func runIngress2Gateway(allOriginal []*unstructured.Unstructured, extraArgs []st
 	args := []string{
 		"print",
 		"--input-file", tmpPath,
-		// don't force --output; default is yaml and user can override if desired
 	}
 	args = append(args, extraArgs...)
 
@@ -156,15 +161,9 @@ transformed manifests.`,
 				return nil
 			}
 
-			// Extract ingress2gateway args. Since we set UnknownFlags: true,
-			// cobra will ignore flags it doesn't know, but they won't be in 'args'.
 			var ingress2gatewayArgs []string
-
-			// Simple approach: any argument in os.Args that isn't --input-file or its value
-			// and isn't --help/--version is a candidate for ingress2gateway.
 			for i := 1; i < len(os.Args); i++ {
 				arg := os.Args[i]
-				// Skip our known flags and their values
 				if arg == "--input-file" {
 					i++
 					continue
@@ -178,7 +177,6 @@ transformed manifests.`,
 				ingress2gatewayArgs = append(ingress2gatewayArgs, arg)
 			}
 
-			// Basic validation for ingress2gateway args
 			hasProviders := false
 			for _, arg := range ingress2gatewayArgs {
 				if strings.HasPrefix(arg, "--providers=") || arg == "--providers" || strings.HasPrefix(arg, "-providers=") || arg == "-providers" {
@@ -190,7 +188,6 @@ transformed manifests.`,
 				return fmt.Errorf("--providers flag is required for ingress2gateway (e.g., --providers=ingress-nginx)")
 			}
 
-			// Determine input source
 			var input io.Reader
 			var inputSource string
 			if inputFile != "" {
@@ -206,52 +203,95 @@ transformed manifests.`,
 				inputSource = "stdin"
 			}
 
-			// 1. Read manifests from input source
-			originalObjects, err := readAllObjects(input)
+			// Read all input at once for smallish files to avoid streaming issues
+			allInput, err := io.ReadAll(input)
 			if err != nil {
-				return fmt.Errorf("failed to read input manifests from %s: %w", inputSource, err)
+				return fmt.Errorf("failed to read from %s: %w", inputSource, err)
 			}
 
-			// Nothing in, nothing out.
-			if len(originalObjects) == 0 {
+			fmt.Fprintf(os.Stderr, "ingress-modernizr: info: processing %d bytes of manifests from %s\n", len(allInput), inputSource)
+
+			// Split by --- manually to be more resilient
+			var ingresses []*unstructured.Unstructured
+			var preservedRaw [][]byte
+
+			// Use YAMLReader on the buffer which is more reliable than direct streaming
+			scanner := utilyaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(allInput)))
+			for {
+				doc, err := scanner.Read()
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					return fmt.Errorf("failed to parse manifests from %s: %w", inputSource, err)
+				}
+
+				trimmed := bytes.TrimSpace(doc)
+				if len(trimmed) == 0 {
+					continue
+				}
+
+				var meta struct {
+					Kind string `json:"kind"`
+				}
+				if err := syaml.Unmarshal(doc, &meta); err != nil {
+					preservedRaw = append(preservedRaw, doc)
+					continue
+				}
+
+				if meta.Kind == "Ingress" {
+					u := &unstructured.Unstructured{}
+					if err := syaml.Unmarshal(doc, &u.Object); err != nil {
+						return fmt.Errorf("failed to unmarshal Ingress: %w", err)
+					}
+					ingresses = append(ingresses, u)
+				} else {
+					preservedRaw = append(preservedRaw, doc)
+				}
+			}
+
+			if len(ingresses) == 0 {
 				if inputFile != "" {
-					fmt.Fprintf(os.Stderr, "ingress-modernizr: warning: no objects found in %s\n", inputFile)
+					fmt.Fprintf(os.Stderr, "ingress-modernizr: warning: no Ingress resources found in %s\n", inputFile)
+				}
+				for i, raw := range preservedRaw {
+					if i > 0 {
+						fmt.Fprintln(os.Stdout, "---")
+					}
+					os.Stdout.Write(raw)
 				}
 				return nil
 			}
 
-			// Check if there are any Ingress resources to convert
-			hasIngress := false
-			for _, obj := range originalObjects {
-				if obj.GetKind() == "Ingress" {
-					hasIngress = true
-					break
-				}
-			}
-
-			if !hasIngress {
-				fmt.Fprintf(os.Stderr, "ingress-modernizr: warning: no Ingress resources found in input\n")
-				return writeObjectsYAML(originalObjects, os.Stdout)
-			}
-
-			// 2. Run ingress2gateway on the whole set
-			convertedObjects, err := runIngress2Gateway(originalObjects, ingress2gatewayArgs)
+			// 2. Run ingress2gateway only on the Ingress resources
+			convertedObjects, err := runIngress2Gateway(ingresses, ingress2gatewayArgs)
 			if err != nil {
 				return err
 			}
 
-			// 3. Build final manifest set
-			var final []*unstructured.Unstructured
-			for _, obj := range originalObjects {
-				if obj.GetKind() == "Ingress" {
-					continue
+			// 3. Emit final manifests
+			first := true
+			for _, raw := range preservedRaw {
+				if !first {
+					fmt.Fprintln(os.Stdout, "---")
 				}
-				final = append(final, obj)
+				os.Stdout.Write(raw)
+				first = false
 			}
-			final = append(final, convertedObjects...)
 
-			// 4. Emit final manifests to stdout
-			return writeObjectsYAML(final, os.Stdout)
+			for _, obj := range convertedObjects {
+				if !first {
+					fmt.Fprintln(os.Stdout, "---")
+				}
+				data, err := syaml.Marshal(obj.Object)
+				if err != nil {
+					return fmt.Errorf("failed to marshal converted object: %w", err)
+				}
+				os.Stdout.Write(data)
+				first = false
+			}
+
+			return nil
 		},
 	}
 
