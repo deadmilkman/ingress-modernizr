@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp-sample
+  labels:
+    helm.sh/chart: sample-0.1.0
+    app.kubernetes.io/name: sample
+    app.kubernetes.io/instance: myapp
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+      add_header X-Frame-Options "sameorigin";
+      add_header X-Content-Type-Options nosniff;
+      add_header Referrer-Policy 'same-origin';
+    nginx.ingress.kubernetes.io/cors-allow-methods: PUT, GET, POST, OPTIONS, DELETE
+    nginx.ingress.kubernetes.io/cors-allow-origin: '*'
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/server-snippets: |
+      location ~* "(\'|\")(.*)(drop|insert|md5|select|union)" {
+          deny all;
+      }
+spec:
+  rules:
+    - host: 
+      http:
+        paths:
+    - host: 
+      http:
+        paths:

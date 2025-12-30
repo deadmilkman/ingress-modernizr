@@ -1,8 +1,12 @@
 # ingress-modernizr
 
-A Helm post-renderer that automatically converts Kubernetes Ingress resources into Gateway API resources using [ingress2gateway](https://github.com/kubernetes-sigs/ingress2gateway).
+A tool that automatically converts Kubernetes Ingress resources into Gateway API resources using [ingress2gateway](https://github.com/kubernetes-sigs/ingress2gateway).
 
-`ingress-modernizr` injects itself between Helm's template output and the final apply step.
+`ingress-modernizr` can work as:
+
+- A Helm post-renderer that injects itself between Helm's template output and the final apply step
+- A standalone tool that processes rendered Kubernetes manifests from files or stdin
+
 It runs `ingress2gateway` under the hood, replaces all Ingress resources, and returns a transformed manifest set containing the Gateway API equivalents (e.g., Gateway, HTTPRoute, service attachments, etc.).
 
 This makes it possible to progressively modernize charts and clusters without modifying the charts themselves.
@@ -20,10 +24,12 @@ This makes it possible to progressively modernize charts and clusters without mo
 
 NGINX Ingress is being retired. Gateway API is the strategic direction across major Kubernetes vendors.
 Migrating existing Helm charts can be painful, especially when:
+
 - Dozens of charts still ship Ingress resources.
 - You need Gateway API today.
 - You want to modernize without forking upstream charts.
-- ingress-modernizr serves as a drop-in modernization layer.
+
+`ingress-modernizr` serves as a drop-in modernization layer.
 
 ## What It Does
 
@@ -40,18 +46,17 @@ Migrating existing Helm charts can be painful, especially when:
 
 Everything else (Deployments, Services, CRDs, RBAC, etc.) remains untouched.
 
-## Installation 
+## Installation
 
-### Build from source:
+### Build from source
 
 ```bash
 git clone https://github.com/deadmilkman/ingress-modernizr
 cd ingress-modernizr
 make build    # or `go build ./cmd/ingress-modernizr`
-
 ```
 
-### Or install using Go:
+### Or install using Go
 
 ```bash
 go install github.com/deadmilkman/ingress-modernizr@latest
@@ -69,9 +74,13 @@ You can override the binary path via:
 export INGRESS2GATEWAY_BIN=/custom/path/ingress2gateway
 ```
 
-## Usage With Helm
+## Usage
 
-Basic example
+`ingress-modernizr` can be used in several ways:
+
+### As a Helm Post-Renderer
+
+Basic example:
 
 ```bash
 helm upgrade --install myapp ./chart \
@@ -79,7 +88,7 @@ helm upgrade --install myapp ./chart \
   --post-renderer-args="--providers=ingress-nginx"
 ```
 
-Example with namespace + other flags
+Example with namespace + other flags:
 
 Everything after `--post-renderer-args` is passed directly to `ingress2gateway`:
 
@@ -89,6 +98,32 @@ helm upgrade --install myapp ./chart \
   --post-renderer-args="--namespace=apps --providers=ingress-nginx --kubeconfig=/my/kubeconfig"
 ```
 
+### As a Standalone Tool
+
+Process manifests from a file:
+
+```bash
+ingress-modernizr --input-file=manifests.yaml --providers=ingress-nginx > output.yaml
+```
+
+Process from stdin (useful with other tools):
+
+```bash
+# With helm template
+helm template myapp ./chart | ingress-modernizr --providers=ingress-nginx
+
+# With kubectl dry-run
+kubectl apply -k . --dry-run=client -o yaml | ingress-modernizr --providers=ingress-nginx
+
+# With kustomize
+kustomize build . | ingress-modernizr --providers=ingress-nginx | kubectl apply -f -
+```
+
+### Get Help
+
+```bash
+ingress-modernizr --help
+```
 
 ### Provider is mandatory
 
@@ -100,6 +135,38 @@ helm upgrade --install myapp ./chart \
 - etc.
 
 If you forget it, the tool will error out.
+
+## Testing
+
+The repository includes sample manifests for testing different scenarios:
+
+### Available sample files
+
+- `samples/rendered-manifests/manifest-no-ingress.yaml` - Contains only Service and Deployment resources (no Ingress)
+- `samples/rendered-manifests/ingress.yaml` - Contains a single Ingress resource with nginx annotations
+- `samples/rendered-manifests/many-manifests.yaml` - Contains multiple resources including Ingress, Services, etc.
+
+### Test scenarios
+
+| Scenario | Command | Expected Result |
+|----------|---------|----------------|
+| **No Ingress resources** | `cat samples/rendered-manifests/manifest-no-ingress.yaml \| ./dist/ingress-modernizr -- --providers=ingress-nginx` | Shows warning, passes through original manifests |
+| **Simple Ingress** | `cat samples/rendered-manifests/ingress.yaml \| ./dist/ingress-modernizr -- --providers=ingress-nginx` | Converts Ingress to Gateway API resources |
+| **Mixed manifests** | `cat samples/rendered-manifests/many-manifests.yaml \| ./dist/ingress-modernizr -- --providers=ingress-nginx` | Converts Ingress, preserves other resources |
+
+### Build and test locally
+
+```bash
+# Build the binary
+make build
+
+# Test scenarios with locally built binary
+cat samples/rendered-manifests/manifest-no-ingress.yaml | ./dist/ingress-modernizr -- --providers=ingress-nginx
+cat samples/rendered-manifests/ingress.yaml | ./dist/ingress-modernizr -- --providers=ingress-nginx
+cat samples/rendered-manifests/many-manifests.yaml | ./dist/ingress-modernizr -- --providers=ingress-nginx
+```
+
+> **Note**: The test commands use `./dist/ingress-modernizr` to run the locally built binary. If you have the tool installed globally, you can use just `ingress-modernizr` instead.
 
 ## Debugging
 

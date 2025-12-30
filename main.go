@@ -1,13 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
+	"strings"
 
+	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	syaml "sigs.k8s.io/yaml"
@@ -15,25 +17,33 @@ import (
 
 // readAllObjects reads a multi-doc YAML/JSON stream into a slice of Unstructured.
 func readAllObjects(r io.Reader) ([]*unstructured.Unstructured, error) {
-	decoder := utilyaml.NewYAMLOrJSONDecoder(r, 4096)
-
+	scanner := utilyaml.NewYAMLReader(bufio.NewReader(r))
 	var objs []*unstructured.Unstructured
 	for {
-		raw := make(map[string]interface{})
-		if err := decoder.Decode(&raw); err != nil {
+		doc, err := scanner.Read()
+		if err != nil {
 			if err == io.EOF {
 				break
 			}
-			return nil, fmt.Errorf("failed to decode manifest: %w", err)
+			return nil, fmt.Errorf("failed to read document: %w", err)
 		}
 
-		// Skip empty docs (e.g. trailing ---)
+		trimmed := bytes.TrimSpace(doc)
+		if len(trimmed) == 0 {
+			continue
+		}
+
+		var raw map[string]interface{}
+		if err := syaml.Unmarshal(doc, &raw); err != nil {
+			// If it's not a map (e.g. a scalar or comment doc), skip it for object parsing
+			continue
+		}
+
 		if len(raw) == 0 {
 			continue
 		}
 
-		u := &unstructured.Unstructured{Object: raw}
-		objs = append(objs, u)
+		objs = append(objs, &unstructured.Unstructured{Object: raw})
 	}
 
 	return objs, nil
@@ -61,12 +71,11 @@ func writeObjectsYAML(objs []*unstructured.Unstructured, w io.Writer) error {
 	return nil
 }
 
-// runIngress2Gateway takes the full original manifest set, writes it to a temp file,
+// runIngress2Gateway takes only the Ingress resources, writes them to a temp file,
 // and calls `ingress2gateway print --input-file=<temp>`, passing through any extraArgs.
 // It returns the converted Gateway API resources as Unstructured objects.
-func runIngress2Gateway(allOriginal []*unstructured.Unstructured, extraArgs []string) ([]*unstructured.Unstructured, error) {
-	// If there's nothing, nothing to convert.
-	if len(allOriginal) == 0 {
+func runIngress2Gateway(ingresses []*unstructured.Unstructured, extraArgs []string) ([]*unstructured.Unstructured, error) {
+	if len(ingresses) == 0 {
 		return nil, nil
 	}
 
@@ -79,7 +88,7 @@ func runIngress2Gateway(allOriginal []*unstructured.Unstructured, extraArgs []st
 		_ = os.Remove(tmpPath)
 	}()
 
-	if err := writeObjectsYAML(allOriginal, tmpFile); err != nil {
+	if err := writeObjectsYAML(ingresses, tmpFile); err != nil {
 		_ = tmpFile.Close()
 		return nil, fmt.Errorf("failed to write manifests to temp file: %w", err)
 	}
@@ -87,13 +96,11 @@ func runIngress2Gateway(allOriginal []*unstructured.Unstructured, extraArgs []st
 		return nil, fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	// Decide which ingress2gateway binary to use.
 	bin := os.Getenv("INGRESS2GATEWAY_BIN")
 	if bin == "" {
 		bin = "ingress2gateway"
 	}
 
-	// If the user passed "print" explicitly, drop it — we always call print.
 	if len(extraArgs) > 0 && extraArgs[0] == "print" {
 		extraArgs = extraArgs[1:]
 	}
@@ -101,7 +108,6 @@ func runIngress2Gateway(allOriginal []*unstructured.Unstructured, extraArgs []st
 	args := []string{
 		"print",
 		"--input-file", tmpPath,
-		// don't force --output; default is yaml and user can override if desired
 	}
 	args = append(args, extraArgs...)
 
@@ -125,44 +131,174 @@ func runIngress2Gateway(allOriginal []*unstructured.Unstructured, extraArgs []st
 }
 
 func main() {
-	log.SetFlags(0)
+	var (
+		inputFile string
+		version   bool
+	)
 
-	// 1. Read everything Helm rendered from stdin.
-	originalObjects, err := readAllObjects(os.Stdin)
-	if err != nil {
-		log.Fatalf("ingress-modernizr: failed to read input manifests: %v", err)
+	rootCmd := &cobra.Command{
+		Use:   "ingress-modernizr [flags] [ingress2gateway-args...]",
+		Short: "Convert Kubernetes Ingress to Gateway API resources",
+		Long: `This tool reads Kubernetes manifests (rendered by Helm or any other tool), converts
+Ingress resources to Gateway API resources using ingress2gateway, and outputs the
+transformed manifests.`,
+		Example: `  # As Helm post-renderer (reads from stdin)
+  helm template myapp ./chart | ingress-modernizr --providers=ingress-nginx
+
+  # From a file
+  ingress-modernizr --input-file=manifests.yaml --providers=ingress-nginx
+
+  # With kubectl apply
+  kubectl apply -k . --dry-run=client -o yaml | ingress-modernizr --providers=ingress-nginx | kubectl apply -f -`,
+		// Allow unknown flags to be passed to ingress2gateway
+		FParseErrWhitelist: cobra.FParseErrWhitelist{
+			UnknownFlags: true,
+		},
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if version {
+				fmt.Println("ingress-modernizr v0.0.1")
+				return nil
+			}
+
+			var ingress2gatewayArgs []string
+			for i := 1; i < len(os.Args); i++ {
+				arg := os.Args[i]
+				if arg == "--input-file" {
+					i++
+					continue
+				}
+				if strings.HasPrefix(arg, "--input-file=") {
+					continue
+				}
+				if arg == "--help" || arg == "-h" || arg == "--version" {
+					continue
+				}
+				ingress2gatewayArgs = append(ingress2gatewayArgs, arg)
+			}
+
+			hasProviders := false
+			for _, arg := range ingress2gatewayArgs {
+				if strings.HasPrefix(arg, "--providers=") || arg == "--providers" || strings.HasPrefix(arg, "-providers=") || arg == "-providers" {
+					hasProviders = true
+					break
+				}
+			}
+			if !hasProviders {
+				return fmt.Errorf("--providers flag is required for ingress2gateway (e.g., --providers=ingress-nginx)")
+			}
+
+			var input io.Reader
+			var inputSource string
+			if inputFile != "" {
+				file, err := os.Open(inputFile)
+				if err != nil {
+					return fmt.Errorf("failed to open input file %s: %w", inputFile, err)
+				}
+				defer file.Close()
+				input = file
+				inputSource = inputFile
+			} else {
+				input = os.Stdin
+				inputSource = "stdin"
+			}
+
+			// Read all input at once for smallish files to avoid streaming issues
+			allInput, err := io.ReadAll(input)
+			if err != nil {
+				return fmt.Errorf("failed to read from %s: %w", inputSource, err)
+			}
+
+			fmt.Fprintf(os.Stderr, "ingress-modernizr: info: processing %d bytes of manifests from %s\n", len(allInput), inputSource)
+
+			// Split by --- manually to be more resilient
+			var ingresses []*unstructured.Unstructured
+			var preservedRaw [][]byte
+
+			// Use YAMLReader on the buffer which is more reliable than direct streaming
+			scanner := utilyaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(allInput)))
+			for {
+				doc, err := scanner.Read()
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					return fmt.Errorf("failed to parse manifests from %s: %w", inputSource, err)
+				}
+
+				trimmed := bytes.TrimSpace(doc)
+				if len(trimmed) == 0 {
+					continue
+				}
+
+				var meta struct {
+					Kind string `json:"kind"`
+				}
+				if err := syaml.Unmarshal(doc, &meta); err != nil {
+					preservedRaw = append(preservedRaw, doc)
+					continue
+				}
+
+				if meta.Kind == "Ingress" {
+					u := &unstructured.Unstructured{}
+					if err := syaml.Unmarshal(doc, &u.Object); err != nil {
+						return fmt.Errorf("failed to unmarshal Ingress: %w", err)
+					}
+					ingresses = append(ingresses, u)
+				} else {
+					preservedRaw = append(preservedRaw, doc)
+				}
+			}
+
+			if len(ingresses) == 0 {
+				if inputFile != "" {
+					fmt.Fprintf(os.Stderr, "ingress-modernizr: warning: no Ingress resources found in %s\n", inputFile)
+				}
+				for i, raw := range preservedRaw {
+					if i > 0 {
+						fmt.Fprintln(os.Stdout, "---")
+					}
+					os.Stdout.Write(raw)
+				}
+				return nil
+			}
+
+			// 2. Run ingress2gateway only on the Ingress resources
+			convertedObjects, err := runIngress2Gateway(ingresses, ingress2gatewayArgs)
+			if err != nil {
+				return err
+			}
+
+			// 3. Emit final manifests
+			first := true
+			for _, raw := range preservedRaw {
+				if !first {
+					fmt.Fprintln(os.Stdout, "---")
+				}
+				os.Stdout.Write(raw)
+				first = false
+			}
+
+			for _, obj := range convertedObjects {
+				if !first {
+					fmt.Fprintln(os.Stdout, "---")
+				}
+				data, err := syaml.Marshal(obj.Object)
+				if err != nil {
+					return fmt.Errorf("failed to marshal converted object: %w", err)
+				}
+				os.Stdout.Write(data)
+				first = false
+			}
+
+			return nil
+		},
 	}
 
-	// Nothing in, nothing out.
-	if len(originalObjects) == 0 {
-		return
-	}
+	rootCmd.Flags().StringVar(&inputFile, "input-file", "", "Path to input manifest file (default: read from stdin)")
+	rootCmd.Flags().BoolVar(&version, "version", false, "Show version")
 
-	// 2. Run ingress2gateway on the whole set, letting it pick and process
-	//    Ingress + provider-specific CRDs. Other resources are ignored by it.
-	convertedObjects, err := runIngress2Gateway(originalObjects, os.Args[1:])
-	if err != nil {
-		log.Fatalf("ingress-modernizr: %v", err)
-	}
-
-	// 3. Build final manifest set:
-	//    - Drop original Ingress resources
-	//    - Keep all other original resources
-	//    - Append converted Gateway API resources
-	var final []*unstructured.Unstructured
-
-	for _, obj := range originalObjects {
-		if obj.GetKind() == "Ingress" {
-			// Strip all Ingress objects; they are replaced by converted ones.
-			continue
-		}
-		final = append(final, obj)
-	}
-
-	final = append(final, convertedObjects...)
-
-	// 4. Emit final manifests back to Helm.
-	if err := writeObjectsYAML(final, os.Stdout); err != nil {
-		log.Fatalf("ingress-modernizr: failed to write output manifests: %v", err)
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
 	}
 }
