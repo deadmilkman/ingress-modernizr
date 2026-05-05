@@ -44,12 +44,12 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
   - provider args (for example `--providers=ingress-nginx`) are forwarded
 - [x] Add Helm 3 integration checks with standalone executable post-renderer.
 - [x] Add Helm 4 integration checks with installed `postrenderer/v1` subprocess plugin.
-- [ ] Prefer a pinned Helm 4 Docker image in CI if a reliable image exists.
+- [x] Prefer a pinned Helm 4 Docker image in CI if a reliable image exists.
 - [x] If no suitable Helm 4 image exists, download a pinned Helm 4 release binary in CI.
 - [x] Keep Helm 4 integration checks skippable for local development when Helm 4 is unavailable.
 - [x] Add explicit Helm 4 hook coverage (including behavior decision and documentation).
 
-CI currently uses pinned Helm `v4.1.1` binary download for Helm 4 integration checks.
+CI now prefers `alpine/helm:4.1.1` for Helm 4 integration checks, with pinned binary download fallback.
 
 ### Sample chart integration fixture
 

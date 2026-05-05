@@ -30,4 +30,23 @@ jobs:
         run: scripts/test/integration-helm3.sh
 
       - name: Helm 4 integration check
-        run: HELM4_AUTO_DOWNLOAD=1 HELM4_VERSION=4.1.1 scripts/test/integration-helm4.sh
+        run: |
+          if docker manifest inspect alpine/helm:4.1.1 >/dev/null 2>&1; then
+            cat >/tmp/helm4-docker <<'EOF'
+#!/usr/bin/env sh
+exec docker run --rm \
+  -v "$PWD:$PWD" \
+  -v /tmp:/tmp \
+  -w "$PWD" \
+  -e HELM_CONFIG_HOME \
+  -e HELM_CACHE_HOME \
+  -e HELM_DATA_HOME \
+  -e INGRESS2GATEWAY_BIN \
+  -e ING2GW_ARGS_FILE \
+  alpine/helm:4.1.1 "$@"
+EOF
+            chmod +x /tmp/helm4-docker
+            HELM4_BIN=/tmp/helm4-docker scripts/test/integration-helm4.sh || HELM4_AUTO_DOWNLOAD=1 HELM4_VERSION=4.1.1 scripts/test/integration-helm4.sh
+          else
+            HELM4_AUTO_DOWNLOAD=1 HELM4_VERSION=4.1.1 scripts/test/integration-helm4.sh
+          fi
