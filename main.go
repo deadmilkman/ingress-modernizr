@@ -124,6 +124,21 @@ func runIngress2Gateway(allOriginal []*unstructured.Unstructured, extraArgs []st
 	return converted, nil
 }
 
+func buildFinalObjects(originalObjects, convertedObjects []*unstructured.Unstructured) []*unstructured.Unstructured {
+	var final []*unstructured.Unstructured
+
+	for _, obj := range originalObjects {
+		if obj.GetKind() == "Ingress" {
+			continue
+		}
+		final = append(final, obj)
+	}
+
+	final = append(final, convertedObjects...)
+
+	return final
+}
+
 func main() {
 	log.SetFlags(0)
 
@@ -149,17 +164,7 @@ func main() {
 	//    - Drop original Ingress resources
 	//    - Keep all other original resources
 	//    - Append converted Gateway API resources
-	var final []*unstructured.Unstructured
-
-	for _, obj := range originalObjects {
-		if obj.GetKind() == "Ingress" {
-			// Strip all Ingress objects; they are replaced by converted ones.
-			continue
-		}
-		final = append(final, obj)
-	}
-
-	final = append(final, convertedObjects...)
+	final := buildFinalObjects(originalObjects, convertedObjects)
 
 	// 4. Emit final manifests back to Helm.
 	if err := writeObjectsYAML(final, os.Stdout); err != nil {

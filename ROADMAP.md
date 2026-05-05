@@ -29,7 +29,7 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
 
 ### Testing plan
 
-- [ ] Add unit tests for YAML stream behavior:
+- [x] Add unit tests for YAML stream behavior:
   - multi-document input
   - empty documents
   - malformed YAML errors
@@ -64,7 +64,7 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
 - [ ] Helm 4 works with installed plugin and `--post-renderer ingress-modernizr`.
 - [ ] Provider args reach `ingress2gateway` in both Helm versions.
 - [ ] Existing stdin/stdout manual usage remains valid.
-- [ ] Unit tests cover parser/filter/assembly behavior.
+- [x] Unit tests cover parser/filter/assembly behavior.
 - [ ] Integration checks cover Helm 3 executable mode and Helm 4 plugin mode.
 - [ ] CI pins the Helm 4 version used for plugin verification.
 - [ ] Helm 4 hook behavior is tested and documented.
