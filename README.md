@@ -47,7 +47,7 @@ Everything else (Deployments, Services, CRDs, RBAC, etc.) remains untouched.
 ```bash
 git clone https://github.com/deadmilkman/ingress-modernizr
 cd ingress-modernizr
-make build    # or `go build ./cmd/ingress-modernizr`
+make build    # or `go build -o ./dist/ingress-modernizr main.go`
 
 ```
 
@@ -71,22 +71,48 @@ export INGRESS2GATEWAY_BIN=/custom/path/ingress2gateway
 
 ## Usage With Helm
 
-Basic example
+### Helm 3 (executable post-renderer)
+
+Basic example:
 
 ```bash
 helm upgrade --install myapp ./chart \
-  --post-renderer ./ingress-modernizr \
+  --post-renderer ./dist/ingress-modernizr \
   --post-renderer-args="--providers=ingress-nginx"
 ```
 
-Example with namespace + other flags
+Example with namespace + other flags:
 
 Everything after `--post-renderer-args` is passed directly to `ingress2gateway`:
 
 ```bash
 helm upgrade --install myapp ./chart \
-  --post-renderer ./ingress-modernizr \
+  --post-renderer ./dist/ingress-modernizr \
   --post-renderer-args="--namespace=apps --providers=ingress-nginx --kubeconfig=/my/kubeconfig"
+```
+
+### Helm 4 (postrenderer plugin)
+
+Helm 4 expects `--post-renderer` to reference a plugin name.
+
+Build and stage the plugin layout:
+
+```bash
+make plugin-layout
+```
+
+Install the plugin in development mode:
+
+```bash
+helm plugin install ./dist/plugin/helm4
+```
+
+Use it by plugin name:
+
+```bash
+helm upgrade --install myapp ./chart \
+  --post-renderer ingress-modernizr \
+  --post-renderer-args="--providers=ingress-nginx"
 ```
 
 
@@ -113,7 +139,7 @@ Run ingress-modernizr manually
 
 ```bash
 cat before.yaml \
-  | ingress-modernizr --providers=ingress-nginx \
+  | ./dist/ingress-modernizr --providers=ingress-nginx \
   > after.yaml
 ```
 
@@ -126,7 +152,7 @@ Example End-to-End
 
 ```bash
 helm template demo ./demo-chart \
-  | ingress-modernizr --providers=ingress-nginx \
+  | ./dist/ingress-modernizr --providers=ingress-nginx \
   | kubectl apply -f -
 ```
 
