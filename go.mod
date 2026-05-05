@@ -1,4 +1,4 @@
-module github.com/deadmilkman/ingress-modernizr
+module github.com/nowhereworks/ingress-modernizr
 
 go 1.25.2
 
