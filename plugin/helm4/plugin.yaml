@@ -1,0 +1,9 @@
+apiVersion: v1
+type: postrenderer/v1
+name: ingress-modernizr
+version: 0.1.0
+runtime: subprocess
+sourceURL: https://github.com/deadmilkman/ingress-modernizr
+runtimeConfig:
+  platformCommand:
+    - command: ${HELM_PLUGIN_DIR}/ingress-modernizr

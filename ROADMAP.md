@@ -9,7 +9,7 @@ Goal: support Helm 4 without breaking Helm 3, using the same `ingress-modernizr`
 ### Plan
 
 - [x] Keep current stdin/stdout renderer behavior unchanged.
-- [ ] Add Helm 4 plugin metadata for `type: postrenderer/v1` with `runtime: subprocess`.
+- [x] Add Helm 4 plugin metadata for `type: postrenderer/v1` with `runtime: subprocess`.
 - [ ] Add a plugin layout (recommended: `plugin/helm4/plugin.yaml`).
 - [ ] Decide binary delivery for plugin use (release packaging, copy, or symlink into plugin dir).
 - [ ] Add a Makefile target to build a plugin-ready layout.
