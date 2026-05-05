@@ -1,0 +1,163 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "*"
+    paths:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - Makefile
+      - plugin/**
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.ref != 'refs/tags/rolling'
+    name: Build ${{ matrix.goos }} ${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build release asset
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+
+          version="$REF_NAME"
+          if [[ "$REF_TYPE" != "tag" ]]; then
+            version="rolling-${GITHUB_SHA::7}"
+          fi
+          safe_version="${version//\//-}"
+
+          asset_base="ingress-modernizr_${safe_version}_${GOOS}_${GOARCH}"
+          package_dir="dist/${asset_base}"
+          binary="ingress-modernizr"
+          if [[ "$GOOS" == "windows" ]]; then
+            binary="${binary}.exe"
+          fi
+
+          mkdir -p "$package_dir"
+          CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
+            go build -trimpath -ldflags="-s -w" -o "$package_dir/$binary" main.go
+
+          cp plugin/helm4/plugin.yaml "$package_dir/plugin.yaml"
+          cp README.md "$package_dir/README.md"
+
+          if [[ "$GOOS" == "windows" ]]; then
+            (cd dist && zip -r "${asset_base}.zip" "$asset_base")
+          else
+            tar -C dist -czf "dist/${asset_base}.tar.gz" "$asset_base"
+          fi
+          rm -rf "$package_dir"
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    if: github.ref != 'refs/tags/rolling'
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          cd release-assets
+          sha256sum ingress-modernizr_* > checksums.txt
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            tag="$REF_NAME"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" release-assets/* --clobber
+              gh release edit "$tag" --title "$tag"
+            else
+              gh release create "$tag" release-assets/* \
+                --title "$tag" \
+                --generate-notes \
+                --verify-tag
+            fi
+            exit 0
+          fi
+
+          tag="rolling"
+          notes="Rolling release for main at ${GITHUB_SHA}."
+
+          git tag -f "$tag" "$GITHUB_SHA"
+          git push --force origin "refs/tags/$tag"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" release-assets/* --clobber
+            gh release edit "$tag" \
+              --title "Rolling Release" \
+              --notes "$notes" \
+              --prerelease \
+              --latest=false \
+              --target "$GITHUB_SHA"
+          else
+            gh release create "$tag" release-assets/* \
+              --title "Rolling Release" \
+              --notes "$notes" \
+              --prerelease \
+              --latest=false \
+              --target "$GITHUB_SHA"
+          fi
