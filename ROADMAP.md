@@ -42,7 +42,7 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
   - leading user-supplied `print` is stripped
   - `--input-file` receives the full rendered stream
   - provider args (for example `--providers=ingress-nginx`) are forwarded
-- [ ] Add Helm 3 integration checks with standalone executable post-renderer.
+- [x] Add Helm 3 integration checks with standalone executable post-renderer.
 - [ ] Add Helm 4 integration checks with installed `postrenderer/v1` subprocess plugin.
 - [ ] Prefer a pinned Helm 4 Docker image in CI if a reliable image exists.
 - [ ] If no suitable Helm 4 image exists, download a pinned Helm 4 release binary in CI.
@@ -60,9 +60,9 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
 ### Acceptance criteria
 
 - [ ] `make build` still produces the standalone Helm 3-compatible binary.
-- [ ] Helm 3 works with `--post-renderer ./dist/ingress-modernizr`.
+- [x] Helm 3 works with `--post-renderer ./dist/ingress-modernizr`.
 - [ ] Helm 4 works with installed plugin and `--post-renderer ingress-modernizr`.
-- [ ] Provider args reach `ingress2gateway` in both Helm versions.
+- [x] Provider args reach `ingress2gateway` in both Helm versions.
 - [ ] Existing stdin/stdout manual usage remains valid.
 - [x] Unit tests cover parser/filter/assembly behavior.
 - [ ] Integration checks cover Helm 3 executable mode and Helm 4 plugin mode.
