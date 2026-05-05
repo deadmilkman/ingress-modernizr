@@ -4,22 +4,73 @@ on:
   push:
     branches:
       - main
-    tags:
-      - "*"
     paths:
       - "**/*.go"
       - go.mod
       - go.sum
       - Makefile
       - plugin/**
+      - scripts/test/**
+      - .github/workflows/release.yml
+
+concurrency:
+  group: latest-release
+  cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Helm 3
+        run: |
+          curl -fsSL "https://get.helm.sh/helm-v3.18.0-linux-amd64.tar.gz" -o /tmp/helm-v3.18.0-linux-amd64.tar.gz
+          tar -xzf /tmp/helm-v3.18.0-linux-amd64.tar.gz -C /tmp
+          sudo install /tmp/linux-amd64/helm /usr/local/bin/helm
+
+      - name: Unit tests
+        run: go test ./...
+
+      - name: Helm 3 integration check
+        run: scripts/test/integration-helm3.sh
+
+      - name: Helm 4 integration check
+        run: |
+          if docker manifest inspect alpine/helm:4.1.1 >/dev/null 2>&1; then
+            cat >/tmp/helm4-docker <<'EOF'
+          #!/usr/bin/env sh
+          exec docker run --rm \
+            -v "$PWD:$PWD" \
+            -v /tmp:/tmp \
+            -w "$PWD" \
+            -e HELM_CONFIG_HOME \
+            -e HELM_CACHE_HOME \
+            -e HELM_DATA_HOME \
+            -e INGRESS2GATEWAY_BIN \
+            -e ING2GW_ARGS_FILE \
+            alpine/helm:4.1.1 "$@"
+          EOF
+            chmod +x /tmp/helm4-docker
+            HELM4_BIN=/tmp/helm4-docker scripts/test/integration-helm4.sh || HELM4_AUTO_DOWNLOAD=1 HELM4_VERSION=4.1.1 scripts/test/integration-helm4.sh
+          else
+            HELM4_AUTO_DOWNLOAD=1 HELM4_VERSION=4.1.1 scripts/test/integration-helm4.sh
+          fi
+
   build:
-    if: github.ref != 'refs/tags/rolling'
     name: Build ${{ matrix.goos }} ${{ matrix.goarch }}
+    needs: test
     runs-on: ubuntu-latest
 
     strategy:
@@ -52,18 +103,12 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          REF_NAME: ${{ github.ref_name }}
-          REF_TYPE: ${{ github.ref_type }}
         run: |
           set -euo pipefail
 
-          version="$REF_NAME"
-          if [[ "$REF_TYPE" != "tag" ]]; then
-            version="rolling-${GITHUB_SHA::7}"
-          fi
-          safe_version="${version//\//-}"
+          version="latest"
 
-          asset_base="ingress-modernizr_${safe_version}_${GOOS}_${GOARCH}"
+          asset_base="ingress-modernizr_${version}_${GOOS}_${GOARCH}"
           package_dir="dist/${asset_base}"
           binary="ingress-modernizr"
           if [[ "$GOOS" == "windows" ]]; then
@@ -92,12 +137,9 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.ref != 'refs/tags/rolling'
     name: Publish release
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout
@@ -120,27 +162,16 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          REF_NAME: ${{ github.ref_name }}
-          REF_TYPE: ${{ github.ref_type }}
         run: |
           set -euo pipefail
 
-          if [[ "$REF_TYPE" == "tag" ]]; then
-            tag="$REF_NAME"
-            if gh release view "$tag" >/dev/null 2>&1; then
-              gh release upload "$tag" release-assets/* --clobber
-              gh release edit "$tag" --title "$tag"
-            else
-              gh release create "$tag" release-assets/* \
-                --title "$tag" \
-                --generate-notes \
-                --verify-tag
-            fi
-            exit 0
+          legacy_tag="rolling"
+          if gh release view "$legacy_tag" >/dev/null 2>&1; then
+            gh release delete "$legacy_tag" --yes --cleanup-tag
           fi
 
-          tag="rolling"
-          notes="Rolling release for main at ${GITHUB_SHA}."
+          tag="latest"
+          notes="Latest build from main at ${GITHUB_SHA}."
 
           git tag -f "$tag" "$GITHUB_SHA"
           git push --force origin "refs/tags/$tag"
@@ -148,16 +179,14 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" release-assets/* --clobber
             gh release edit "$tag" \
-              --title "Rolling Release" \
+              --title "latest" \
               --notes "$notes" \
-              --prerelease \
-              --latest=false \
+              --latest \
               --target "$GITHUB_SHA"
           else
             gh release create "$tag" release-assets/* \
-              --title "Rolling Release" \
+              --title "latest" \
               --notes "$notes" \
-              --prerelease \
-              --latest=false \
+              --latest \
               --target "$GITHUB_SHA"
           fi
