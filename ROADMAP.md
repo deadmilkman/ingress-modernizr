@@ -17,7 +17,7 @@ Goal: support Helm 4 without breaking Helm 3, using the same `ingress-modernizr`
 - [x] Verify `--post-renderer-args` pass through correctly under Helm 4.
 - [x] Verify `INGRESS2GATEWAY_BIN` works when invoked by Helm 4 plugin runtime.
 - [x] Test and document Helm 4 hook behavior (Helm 4 post-renders hooks by default).
-- [ ] Document Helm 3 vs Helm 4 behavior differences and any caveats.
+- [x] Document Helm 3 vs Helm 4 behavior differences and any caveats.
 
 Binary delivery decision: package `plugin/helm4/plugin.yaml` with a copied binary at `plugin/helm4/ingress-modernizr` for plugin distribution.
 

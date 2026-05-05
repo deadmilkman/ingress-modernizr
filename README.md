@@ -141,6 +141,14 @@ In practical terms:
 
 If your charts rely on Ingress hooks, validate this behavior carefully before production use.
 
+### Helm 3 vs Helm 4 caveats
+
+- Helm 3 accepts an executable path in `--post-renderer`.
+- Helm 4 expects a postrenderer plugin name in `--post-renderer`.
+- Helm 4 post-renders hooks by default; Helm 3 behavior differs.
+- `--post-renderer-args` are passed through in both modes.
+- `INGRESS2GATEWAY_BIN` override works in both modes, including Helm 4 plugin execution.
+
 ## Debugging
 
 Inspect what Helm is giving the post-renderer
