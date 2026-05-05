@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Helm 3
+        run: |
+          curl -fsSL "https://get.helm.sh/helm-v3.18.0-linux-amd64.tar.gz" -o /tmp/helm-v3.18.0-linux-amd64.tar.gz
+          tar -xzf /tmp/helm-v3.18.0-linux-amd64.tar.gz -C /tmp
+          sudo install /tmp/linux-amd64/helm /usr/local/bin/helm
+
+      - name: Unit tests
+        run: go test ./...
+
+      - name: Helm 3 integration check
+        run: scripts/test/integration-helm3.sh
+
+      - name: Helm 4 integration check
+        run: HELM4_AUTO_DOWNLOAD=1 HELM4_VERSION=4.1.1 scripts/test/integration-helm4.sh

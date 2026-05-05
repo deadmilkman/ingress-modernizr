@@ -49,6 +49,8 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
 - [x] Keep Helm 4 integration checks skippable for local development when Helm 4 is unavailable.
 - [x] Add explicit Helm 4 hook coverage (including behavior decision and documentation).
 
+CI currently uses pinned Helm `v4.1.1` binary download for Helm 4 integration checks.
+
 ### Sample chart integration fixture
 
 - [x] Render `samples/sample` in tests and include it in Helm 3 and Helm 4 integration checks.
@@ -66,6 +68,6 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
 - [x] Existing stdin/stdout manual usage remains valid.
 - [x] Unit tests cover parser/filter/assembly behavior.
 - [x] Integration checks cover Helm 3 executable mode and Helm 4 plugin mode.
-- [ ] CI pins the Helm 4 version used for plugin verification.
+- [x] CI pins the Helm 4 version used for plugin verification.
 - [x] Helm 4 hook behavior is tested and documented.
 - [x] `samples/sample` renders a valid Ingress with default values.
