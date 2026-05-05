@@ -12,7 +12,7 @@ Goal: support Helm 4 without breaking Helm 3, using the same `ingress-modernizr`
 - [x] Add Helm 4 plugin metadata for `type: postrenderer/v1` with `runtime: subprocess`.
 - [x] Add a plugin layout (recommended: `plugin/helm4/plugin.yaml`).
 - [x] Decide binary delivery for plugin use (release packaging, copy, or symlink into plugin dir).
-- [ ] Add a Makefile target to build a plugin-ready layout.
+- [x] Add a Makefile target to build a plugin-ready layout.
 - [ ] Update README with Helm 3 executable mode and Helm 4 plugin mode.
 - [ ] Verify `--post-renderer-args` pass through correctly under Helm 4.
 - [ ] Verify `INGRESS2GATEWAY_BIN` works when invoked by Helm 4 plugin runtime.
