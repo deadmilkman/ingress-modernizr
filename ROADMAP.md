@@ -16,7 +16,7 @@ Goal: support Helm 4 without breaking Helm 3, using the same `ingress-modernizr`
 - [x] Update README with Helm 3 executable mode and Helm 4 plugin mode.
 - [x] Verify `--post-renderer-args` pass through correctly under Helm 4.
 - [x] Verify `INGRESS2GATEWAY_BIN` works when invoked by Helm 4 plugin runtime.
-- [ ] Test and document Helm 4 hook behavior (Helm 4 post-renders hooks by default).
+- [x] Test and document Helm 4 hook behavior (Helm 4 post-renders hooks by default).
 - [ ] Document Helm 3 vs Helm 4 behavior differences and any caveats.
 
 Binary delivery decision: package `plugin/helm4/plugin.yaml` with a copied binary at `plugin/helm4/ingress-modernizr` for plugin distribution.
@@ -24,6 +24,8 @@ Binary delivery decision: package `plugin/helm4/plugin.yaml` with a copied binar
 Verification note: with Helm `v4.1.1`, the fake `ingress2gateway` shim recorded `--providers=ingress-nginx` and `--namespace=apps` after the injected `print --input-file` args.
 
 Verification note: under Helm `v4.1.1` plugin invocation, setting `INGRESS2GATEWAY_BIN` to `scripts/test/fake-ingress2gateway.sh` was honored and produced converted output.
+
+Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while an Ingress hook was removed by current `kind: Ingress` filtering and replaced only by converted output.
 
 ### Testing plan
 

@@ -127,6 +127,20 @@ helm upgrade --install myapp ./chart \
 
 If you forget it, the tool will error out.
 
+### Helm 4 hook behavior
+
+Helm 4 post-renders hooks by default.
+
+`ingress-modernizr` currently strips all `kind: Ingress` objects from the rendered stream, including Ingress hook manifests, then appends converted output from `ingress2gateway`.
+
+In practical terms:
+
+- Non-Ingress hooks (for example the chart test hook Pod) remain hooks.
+- Ingress hooks are removed as original Ingress objects.
+- Converted objects are appended as regular manifests unless conversion output includes hook annotations.
+
+If your charts rely on Ingress hooks, validate this behavior carefully before production use.
+
 ## Debugging
 
 Inspect what Helm is giving the post-renderer
