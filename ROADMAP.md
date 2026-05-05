@@ -36,7 +36,7 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
   - non-Ingress resources preserved
   - Ingress resources removed
   - converted resources appended
-- [ ] Add a fake `ingress2gateway` helper for tests to verify:
+- [x] Add a fake `ingress2gateway` helper for tests to verify:
   - `INGRESS2GATEWAY_BIN` override is honored
   - `print` is always invoked
   - leading user-supplied `print` is stripped
