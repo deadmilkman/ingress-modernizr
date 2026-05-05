@@ -4,7 +4,42 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "${repo_root}"
 
-helm4_bin=${HELM4_BIN:-helm}
+resolve_helm4_bin() {
+  if [ -n "${HELM4_BIN:-}" ]; then
+    printf '%s\n' "${HELM4_BIN}"
+    return 0
+  fi
+
+  if [ "${HELM4_AUTO_DOWNLOAD:-0}" != "1" ]; then
+    return 2
+  fi
+
+  helm4_version=${HELM4_VERSION:-4.1.1}
+  archive="/tmp/opencode/helm-v${helm4_version}-linux-amd64.tar.gz"
+  unpack_dir="/tmp/opencode/helm-v${helm4_version}-linux-amd64"
+  bin_path="${unpack_dir}/linux-amd64/helm"
+
+  if [ ! -x "${bin_path}" ]; then
+    rm -rf "${unpack_dir}"
+    mkdir -p "${unpack_dir}"
+    curl -fsSL "https://get.helm.sh/helm-v${helm4_version}-linux-amd64.tar.gz" -o "${archive}"
+    tar -xzf "${archive}" -C "${unpack_dir}"
+  fi
+
+  printf '%s\n' "${bin_path}"
+}
+
+if helm4_bin=$(resolve_helm4_bin); then
+  :
+else
+  if [ "$?" -eq 2 ]; then
+    echo "SKIP: set HELM4_BIN to a Helm 4 binary or HELM4_AUTO_DOWNLOAD=1" >&2
+    exit 0
+  fi
+  echo "failed to resolve Helm 4 binary" >&2
+  exit 1
+fi
+
 version_out=$(${helm4_bin} version --short)
 case "${version_out}" in
   v4.*)
