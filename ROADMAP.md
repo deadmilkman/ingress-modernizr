@@ -55,7 +55,7 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
 - [x] Fix `samples/sample` so default Ingress values match `templates/ingress.yaml`.
 - [x] Verify fixed sample chart renders a valid `networking.k8s.io/v1` Ingress.
 - [x] Confirm sample render still includes non-Ingress resources (Service, Deployment, ServiceAccount, test hook Pod).
-- [ ] Use additional tiny inline fixtures for focused unit tests where sample chart would be too broad.
+- [x] Use additional tiny inline fixtures for focused unit tests where sample chart would be too broad.
 
 ### Acceptance criteria
 
