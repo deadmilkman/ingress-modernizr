@@ -43,7 +43,7 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
   - `--input-file` receives the full rendered stream
   - provider args (for example `--providers=ingress-nginx`) are forwarded
 - [x] Add Helm 3 integration checks with standalone executable post-renderer.
-- [ ] Add Helm 4 integration checks with installed `postrenderer/v1` subprocess plugin.
+- [x] Add Helm 4 integration checks with installed `postrenderer/v1` subprocess plugin.
 - [ ] Prefer a pinned Helm 4 Docker image in CI if a reliable image exists.
 - [ ] If no suitable Helm 4 image exists, download a pinned Helm 4 release binary in CI.
 - [ ] Keep Helm 4 integration checks skippable for local development when Helm 4 is unavailable.
@@ -51,7 +51,7 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
 
 ### Sample chart integration fixture
 
-- [ ] Render `samples/sample` in tests and include it in Helm 3 and Helm 4 integration checks.
+- [x] Render `samples/sample` in tests and include it in Helm 3 and Helm 4 integration checks.
 - [x] Fix `samples/sample` so default Ingress values match `templates/ingress.yaml`.
 - [x] Verify fixed sample chart renders a valid `networking.k8s.io/v1` Ingress.
 - [x] Confirm sample render still includes non-Ingress resources (Service, Deployment, ServiceAccount, test hook Pod).
@@ -61,11 +61,11 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
 
 - [ ] `make build` still produces the standalone Helm 3-compatible binary.
 - [x] Helm 3 works with `--post-renderer ./dist/ingress-modernizr`.
-- [ ] Helm 4 works with installed plugin and `--post-renderer ingress-modernizr`.
+- [x] Helm 4 works with installed plugin and `--post-renderer ingress-modernizr`.
 - [x] Provider args reach `ingress2gateway` in both Helm versions.
 - [ ] Existing stdin/stdout manual usage remains valid.
 - [x] Unit tests cover parser/filter/assembly behavior.
-- [ ] Integration checks cover Helm 3 executable mode and Helm 4 plugin mode.
+- [x] Integration checks cover Helm 3 executable mode and Helm 4 plugin mode.
 - [ ] CI pins the Helm 4 version used for plugin verification.
-- [ ] Helm 4 hook behavior is tested and documented.
+- [x] Helm 4 hook behavior is tested and documented.
 - [x] `samples/sample` renders a valid Ingress with default values.
