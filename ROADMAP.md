@@ -59,11 +59,11 @@ Hook behavior note: with Helm `v4.1.1`, non-Ingress hooks remained hooks, while 
 
 ### Acceptance criteria
 
-- [ ] `make build` still produces the standalone Helm 3-compatible binary.
+- [x] `make build` still produces the standalone Helm 3-compatible binary.
 - [x] Helm 3 works with `--post-renderer ./dist/ingress-modernizr`.
 - [x] Helm 4 works with installed plugin and `--post-renderer ingress-modernizr`.
 - [x] Provider args reach `ingress2gateway` in both Helm versions.
-- [ ] Existing stdin/stdout manual usage remains valid.
+- [x] Existing stdin/stdout manual usage remains valid.
 - [x] Unit tests cover parser/filter/assembly behavior.
 - [x] Integration checks cover Helm 3 executable mode and Helm 4 plugin mode.
 - [ ] CI pins the Helm 4 version used for plugin verification.
